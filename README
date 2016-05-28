@@ -1,0 +1,84 @@
+Dynalite DDRC810 Emulation Library
+----------------------------------
+This library is how I use it on my network that is largely controlled by a
+Genisys Master home automation controller.  It does work directly on DyNet
+OpCodes, and can be easily modified to suit other environments.  I am happy
+to answer questions as to why I did what, but not rewrite it to suit other
+networks.
+
+This library receives Dynalite OpCodes in the form of a byte array that is as
+if it were listening directly on thye Dynalite bus, and pretends that it is a
+DDRC810 8 channel relay.  It uses the I2C_RL8xxM Arduino library to control
+a relay board over I2C.  This makes it possible to add up to 8 relay boards to
+a single Arduino and have them behave as 8 separate DDRC810 controllers,
+giving a total of 64 channels.
+
+To use the library, include the library in your sketch:
+#include <Dynalite_DDRC810.h>
+
+Initialisation
+--------------
+This is probably the most confusing part, and it could probably be done in a
+more optimised way, but it's designed for speed in operation as someone turning
+on a channel on Dynalite doesn't want to wait 3 seconds for the action to
+occur.  Everything is in byte arrays so that bitwise operators (NOT/AND/OR/XOR)
+can be used, which typically use one or two CPU cycles to evaluate.
+
+The DDRC810 class is initialsed using the begin() function with 7 values.
+
+id
+A byte that is the phyisical dynalite id of the controller, eg 0x04.
+
+addr
+The I2C address of the I2C_RL8xxM relay controller.  There's a separate repo
+for this library.
+
+respond
+A function pointer to a function, defines as "void fn(byte*)" which expects
+an 8 byte array, that is an OpCode.  This function is called by the class when
+it receives an OpCode that requires it send a message back onto the Dynalite
+bus (request channel level for example).  This class will not calculate the
+checksum in the 8th byte of the OpCode.  It expects that whatever function is
+writing to DyNet takes care of that.
+
+area
+This is an array of bytes where the index of the array is the DyNet area number
+and the value is a byte indicating which channels on the I2C_RL8xxM is a member
+of that area.  The first values is always zero, since area numbers start with 1.
+The area number form the OpCode is used to directly access the area array, with
+a "-1" to save on cpu cycles and increase speed.
+For example, initialising with { 0x00, B11100001, B00000010 } means that relay
+1, 6, 7 and 8 are in channel 1 and relay 2 is in area 2.
+
+areas
+Total number of areas; should be the number of elements in the area array.
+
+channel
+Same principle as the area array. However, since channels are per area and not
+global, and zero based, there's going to be a high number of relays in channel
+zero.  The DyNet OpCode to turn on a channel is always channel X in area Y, so
+to determine the relay used we use channel[X] & area[Y] and send that an on/off
+command in the I2C_RL8xxM.
+
+channels
+Number of elements in the channel array.
+
+Functions
+---------
+One and only function is process, which expects an 8 byte DyNet OpCode in the
+form of an 8 byte array.
+
+It will resond to a physical (5C) request, which is used to turn an entire
+DDRC810 controller on/off, or logical requests that make sense for a DDRC810
+relay controller.  Channel level is always given as 0 or 255 for off and on.
+Setting a chanel level is treated as 0% = off and anything greater than 0% is
+on .  Fade time is ignored; it's a relay.
+
+My system is using a Genisys master home automation controller, which defines
+two presets that effectively mean "off" and they're taken care of as such in
+this.  This may not be suitable for all environments.
+
+The actions to perform on various opcodes is one one big switch() statement
+that can be easily tweaked to do anything else.
+
+
